@@ -8,13 +8,80 @@
 #include <sys/ioctl.h>
 #include <sys/sysinfo.h>
 #include <sys/file.h>
-#include <sys/types.h>
 #include <sys/ipc.h>
 #include <sys/msg.h>
 #include <stdarg.h>
 #include "nvram.h"
 #include "nvram_lock.h"
 
+
+static int readFileBin_unlock(char *path, char **data)
+{
+    int total;
+    int fd = 0;
+
+    if( (fd = open(path, O_RDONLY)) < 0 )
+        goto _error;
+
+    total = lseek(fd, 0, SEEK_END);
+    lseek(fd, 0, 0);
+
+    if( (*data = malloc(total)) == NULL )
+    {
+        close(fd);
+        goto _error;
+    }
+
+    if(read(fd, *data, total) < 0)
+    {
+        free(*data);
+        close(fd);
+        goto _error;
+    }
+    
+    close(fd);
+    return total;
+
+_error:
+    return -1;
+}
+
+static int readFileBin(char *path, char **data)
+{
+    int lock;
+    int size;
+
+    lock = nvram_lock(path);
+    size = readFileBin_unlock(path, data);
+    nvram_unlock(lock);
+    return size;
+}
+
+static int writeFileBin_unlock(char *path, char *data, int len)
+{
+    int fd;
+    int size;
+    
+    if( (fd = open(path, O_CREAT|O_WRONLY|O_TRUNC, S_IRUSR|S_IWUSR)) < 0 )
+        return -1;
+
+    size = write(fd, data, len);
+    close(fd);
+
+    return size;
+}
+
+static int writeFileBin(char *path, char *data, int len)
+{
+    int lock;
+    int size;
+
+    lock = nvram_lock(path);
+    size = writeFileBin_unlock(path, data, len);
+    nvram_unlock(lock);
+
+    return size;
+}
 
 static char* nvram_get_func_unlock(const char *name,char *path)
 {
